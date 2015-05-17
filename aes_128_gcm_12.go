@@ -57,7 +57,7 @@ func (this *AesGcm) EncryptThenMac(mac *[16]byte, cipher_text, associated_data, 
 
 func (this *AesGcm) AuthenticateThenDecrypt(mac *[16]byte, plain_text, associated_data, cipher_text, nonce *[]byte) bool {
 
-	// H = E(K,0128)
+	// H = E(K,0^128)
 	// Y0 = Nonce || i0^31 1      <-- if Nonce is 96 bits, otherwise Y0 = GHASH(H,{}, Nonce)
 	//
 	// T' = MSBt( GHASH(H,A,C) xor E(K,Y0) )
@@ -73,28 +73,74 @@ func (this *AesGcm) AuthenticateThenDecrypt(mac *[16]byte, plain_text, associate
 	// Pn = Cn xor MSBu( E(K,Yn) )
 
 	var tag [16]byte
+	var c, i, j, n, modn uint
 
 	if len(*cipher_text) < len(*plain_text) {
 		return false
 	}
 
+	fmt.Printf("[H]             = %x\n", this.h)
 	this.ghash(&tag, associated_data, cipher_text)
 	fmt.Printf("[GHASH]         = %x\n", tag)
 
-	y0 := make([]byte, 16)
-	for i := 0; i < 12; i++ {
-		y0[i] = (*nonce)[i]
+	y := make([]byte, 16)
+	for i = 0; i < 12; i++ {
+		y[i] = (*nonce)[i]
 	}
-	y0[15] = 1
-	// fmt.Printf("[Y0]            = %x\n", y0)
+	y[15] = 1
+	fmt.Printf("[Y0]            = %x\n", y)
 
-	this.cipher.Encrypt(y0, y0)
-	//fmt.Printf("[E(K,Y0)]       = %x\n", y0)
+	this.cipher.Encrypt(y, y)
+	fmt.Printf("[E(K,Y0)]       = %x\n", y)
 
-	for i := 0; i < 16; i++ {
-		tag[i] ^= y0[i]
+	for i = 0; i < 16; i++ {
+		tag[i] ^= y[i]
 	}
-	fmt.Printf("[GHASH^E(K,Y0)] = %x\n\n", tag)
+	fmt.Printf("[GHASH^E(K,Y0)] = %x\n", tag)
+
+	// Chech message authenticate code
+	for i = 0; i < 16; i++ {
+		if tag[i] != mac[i] {
+			//return false
+		}
+	}
+
+	// Decryption of the cipher text
+	n = uint(len(*cipher_text))
+	modn = n & 0xf
+	n >>= 4
+	for i = 0; i < n; i++ {
+		// Compute Yi = incr(Yi−1)
+		c = i + 1
+		y[12] = byte(c & 0xff)
+		y[13] = byte((c >> 8) & 0xff)
+		y[14] = byte((c >> 16) & 0xff)
+		y[15] = byte((c >> 24) & 0xff)
+		this.cipher.Encrypt(y, y)
+		fmt.Printf("[E(K,Y%d)]       = %x\n", c, y)
+
+		// Compute Pi = Ci xor E(K,Yi)
+		for j = 0; j < 16; j++ {
+			(*plain_text)[(i<<4)+j] = (*cipher_text)[(i<<4)+j] ^ y[j]
+		}
+	}
+	if modn > 0 {
+		// Compute Yi = incr(Yi−1)
+		c = n + 1
+		y[12] = byte(c & 0xff)
+		y[13] = byte((c >> 8) & 0xff)
+		y[14] = byte((c >> 16) & 0xff)
+		y[15] = byte((c >> 24) & 0xff)
+		this.cipher.Encrypt(y, y)
+		fmt.Printf("[E(K,Y%d)]       = %x\n", c, y)
+
+		// Compute Pn = Cn xor MSBu( E(K,Yn) )
+		for j = 0; j < modn; j++ {
+			(*plain_text)[(n<<4)+j] = (*cipher_text)[(n<<4)+j] ^ y[j]
+		}
+	}
+
+	fmt.Printf("\n")
 
 	return true
 }

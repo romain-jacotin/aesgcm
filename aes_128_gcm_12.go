@@ -2,6 +2,7 @@ package main
 
 import "crypto/aes"
 import "crypto/cipher"
+
 import "strings"
 import "fmt"
 
@@ -15,7 +16,7 @@ type AesGcm struct {
 
 func NewAesGcm(key []byte) *AesGcm {
 	var err error
-	var i uint
+	var i uint32
 
 	a := new(AesGcm)
 	h := make([]byte, 16)
@@ -55,7 +56,7 @@ func (this *AesGcm) EncryptThenMac(tag, cipher_text, associated_data, plain_text
 	//
 	// T = MSBt( GHASH(H,A,C) xor E(K, Y0) )
 
-	var c, i, j, n, modn uint
+	var c, i, j, n, modn uint32
 	var y0_12, y0_13, y0_14, y0_15 byte
 	var null []byte
 
@@ -86,11 +87,11 @@ func (this *AesGcm) EncryptThenMac(tag, cipher_text, associated_data, plain_text
 		y0_13 = this.n[13]
 		y0_14 = this.n[14]
 		y0_15 = this.n[15]
-		c = (uint(y0_12) << 24) | (uint(y0_13) << 16) | (uint(y0_14) << 8) | uint(y0_15)
+		c = (uint32(y0_12) << 24) | (uint32(y0_13) << 16) | (uint32(y0_14) << 8) | uint32(y0_15)
 	}
 
 	// Encryption of the plain text
-	n = uint(len(plain_text))
+	n = uint32(len(plain_text))
 	modn = n & 0xf
 	n >>= 4
 	for i = 0; i < n; i++ {
@@ -163,7 +164,7 @@ func (this *AesGcm) AuthenticateThenDecrypt(tag, plain_text, associated_data, ci
 	//
 	// Pn = Cn xor MSBu( E(K,Yn) )
 
-	var c, i, j, n, modn uint
+	var c, i, j, n, modn uint32
 	var y0_12, y0_13, y0_14, y0_15 byte
 	var null []byte
 	t := make([]byte, 16)
@@ -191,7 +192,7 @@ func (this *AesGcm) AuthenticateThenDecrypt(tag, plain_text, associated_data, ci
 		y0_13 = this.n[13]
 		y0_14 = this.n[14]
 		y0_15 = this.n[15]
-		c = (uint(y0_12) << 24) | (uint(y0_13) << 16) | (uint(y0_14) << 8) | uint(y0_15)
+		c = (uint32(y0_12) << 24) | (uint32(y0_13) << 16) | (uint32(y0_14) << 8) | uint32(y0_15)
 	}
 
 	fmt.Printf("[H]             = %x %x\n", this.h1, this.h0)
@@ -212,7 +213,7 @@ func (this *AesGcm) AuthenticateThenDecrypt(tag, plain_text, associated_data, ci
 	fmt.Printf("[GHASH^E(K,Y0)] = %x\n", t)
 
 	// Decryption of the cipher text
-	n = uint(len(cipher_text))
+	n = uint32(len(cipher_text))
 	modn = n & 0xf
 	n >>= 4
 	for i = 0; i < n; i++ {
@@ -278,14 +279,14 @@ func (this *AesGcm) Ghash(tag []byte, a, c []byte) {
 	// Xm+n+1 = (Xm+n xor (len(A) || len(C))) * H
 
 	var x0, x1, a0, a1 uint64
-	var i, j, k uint
+	var i, j, k uint32
 
-	m := uint(len(a))
+	m := uint32(len(a))
 	modm := m & 0xf
 	v := uint64(m) << 3
 	m >>= 4
 
-	n := uint(len(c))
+	n := uint32(len(c))
 	modn := n & 0xf
 	u := uint64(n) << 3
 	n >>= 4
@@ -406,7 +407,7 @@ func (this *AesGcm) multH(x0, x1 uint64) (z0, z1 uint64) {
 	//
 	// end for
 
-	var i uint
+	var i uint32
 	// z0 = z1 = 0 (default uint64 value)
 
 	v0 := x0

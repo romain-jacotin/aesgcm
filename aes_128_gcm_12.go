@@ -8,39 +8,37 @@ import "fmt"
 type AesGcm struct {
 	cipher cipher.Block
 	y      []byte
-	h      []byte
 	n      []byte
-	null   []byte
 	h0     uint64
 	h1     uint64
 }
 
-func NewAesGcm(key *[]byte) *AesGcm {
+func NewAesGcm(key []byte) *AesGcm {
 	var err error
 	var i uint
 
 	a := new(AesGcm)
-	a.h = make([]byte, 16)
+	h := make([]byte, 16)
 	a.y = make([]byte, 16)
 	a.n = make([]byte, 16)
 
-	a.cipher, err = aes.NewCipher(*key)
+	a.cipher, err = aes.NewCipher(key)
 	if err != nil {
 		fmt.Printf("crypto.aes.NewCipher( []byte ) error\n")
 		return nil
 	}
 
-	a.cipher.Encrypt(a.h, a.h)
+	a.cipher.Encrypt(h, a.y)
 	for i = 0; i < 8; i++ {
-		a.h1 += uint64(a.h[i]) << (56 - (i << 3))
+		a.h1 += uint64(h[i]) << (56 - (i << 3))
 	}
 	for i = 0; i < 8; i++ {
-		a.h0 += uint64(a.h[i+8]) << (56 - (i << 3))
+		a.h0 += uint64(h[i+8]) << (56 - (i << 3))
 	}
 	return a
 }
 
-func (this *AesGcm) EncryptThenMac(tag *[16]byte, cipher_text, associated_data, plain_text, nonce *[]byte) bool {
+func (this *AesGcm) EncryptThenMac(tag, cipher_text, associated_data, plain_text, nonce []byte) bool {
 
 	// H = E(K,0^128)
 	// Y0 = Nonce || 0^31 1      <-- if Nonce is 96 bits, otherwise Y0 = GHASH(H,{}, Nonce)
@@ -59,8 +57,9 @@ func (this *AesGcm) EncryptThenMac(tag *[16]byte, cipher_text, associated_data, 
 
 	var c, i, j, n, modn uint
 	var y0_12, y0_13, y0_14, y0_15 byte
+	var null []byte
 
-	if len(*cipher_text) < len(*plain_text) {
+	if len(cipher_text) < len(plain_text) {
 		return false
 	}
 
@@ -69,9 +68,9 @@ func (this *AesGcm) EncryptThenMac(tag *[16]byte, cipher_text, associated_data, 
 	//   * 96-bit nonce values can be processed more efficiently, so that length is recommended for situations in which efficiency is critical.
 	//   * If an IV with a length other than 96 bits is used with a particular key, then that key must be used with a tag length of 128.
 	//   * The nonce is authenticated, and it is not necessary to include it in the AAD field.
-	if len(*nonce) == 12 {
+	if len(nonce) == 12 {
 		for i = 0; i < 12; i++ {
-			this.n[i] = (*nonce)[i]
+			this.n[i] = nonce[i]
 			y0_12 = 0
 			y0_13 = 0
 			y0_14 = 0
@@ -79,7 +78,7 @@ func (this *AesGcm) EncryptThenMac(tag *[16]byte, cipher_text, associated_data, 
 		}
 		c = 1
 	} else {
-		this.ghash(tag, &this.null, nonce)
+		this.Ghash(tag, null, nonce)
 		for i = 0; i < 16; i++ {
 			this.n[i] = tag[i]
 		}
@@ -91,7 +90,7 @@ func (this *AesGcm) EncryptThenMac(tag *[16]byte, cipher_text, associated_data, 
 	}
 
 	// Encryption of the plain text
-	n = uint(len(*plain_text))
+	n = uint(len(plain_text))
 	modn = n & 0xf
 	n >>= 4
 	for i = 0; i < n; i++ {
@@ -107,7 +106,7 @@ func (this *AesGcm) EncryptThenMac(tag *[16]byte, cipher_text, associated_data, 
 		fmt.Printf("[E(K,Y%d)]       = %x\n", c-1, this.y)
 		// Compute Ci = Pi xor E(K,Yi)
 		for j = 0; j < 16; j++ {
-			(*cipher_text)[(i<<4)+j] = (*plain_text)[(i<<4)+j] ^ this.y[j]
+			cipher_text[(i<<4)+j] = plain_text[(i<<4)+j] ^ this.y[j]
 		}
 	}
 	if modn > 0 {
@@ -123,13 +122,13 @@ func (this *AesGcm) EncryptThenMac(tag *[16]byte, cipher_text, associated_data, 
 		fmt.Printf("[E(K,Y%d)]       = %x\n", c-1, this.y)
 		// Compute Cn = Pn xor MSBv( E(K,Yn) )
 		for j = 0; j < modn; j++ {
-			(*cipher_text)[(n<<4)+j] = (*plain_text)[(n<<4)+j] ^ this.y[j]
+			cipher_text[(n<<4)+j] = plain_text[(n<<4)+j] ^ this.y[j]
 		}
 	}
 
-	fmt.Printf("[H]             = %x\n", this.h)
-	this.ghash(tag, associated_data, cipher_text)
-	fmt.Printf("[GHASH]         = %x\n", *tag)
+	fmt.Printf("[H]             = %x %x\n", this.h1, this.h0)
+	this.Ghash(tag, associated_data, cipher_text)
+	fmt.Printf("[GHASH]         = %x\n", tag)
 	// Compute Y0
 	this.n[12] = y0_12
 	this.n[13] = y0_13
@@ -143,11 +142,11 @@ func (this *AesGcm) EncryptThenMac(tag *[16]byte, cipher_text, associated_data, 
 	for i = 0; i < 16; i++ {
 		tag[i] ^= this.y[i]
 	}
-	fmt.Printf("[GHASH^E(K,Y0)] = %x\n\n", *tag)
+	fmt.Printf("[GHASH^E(K,Y0)] = %x\n\n", tag)
 	return true
 }
 
-func (this *AesGcm) AuthenticateThenDecrypt(mac *[16]byte, plain_text, associated_data, cipher_text, nonce *[]byte) bool {
+func (this *AesGcm) AuthenticateThenDecrypt(tag, plain_text, associated_data, cipher_text, nonce []byte) bool {
 
 	// H = E(K,0^128)
 	// Y0 = Nonce || i0^31 1      <-- if Nonce is 96 bits, otherwise Y0 = GHASH(H,{}, Nonce)
@@ -166,16 +165,17 @@ func (this *AesGcm) AuthenticateThenDecrypt(mac *[16]byte, plain_text, associate
 
 	var c, i, j, n, modn uint
 	var y0_12, y0_13, y0_14, y0_15 byte
-	var tag [16]byte
+	var null []byte
+	t := make([]byte, 16)
 
-	if len(*cipher_text) < len(*plain_text) {
+	if len(cipher_text) < len(plain_text) {
 		return false
 	}
 
 	// Compute nonce prefix
-	if len(*nonce) == 12 {
+	if len(nonce) == 12 {
 		for i = 0; i < 12; i++ {
-			this.n[i] = (*nonce)[i]
+			this.n[i] = nonce[i]
 		}
 		this.n[12] = 0
 		this.n[13] = 0
@@ -183,9 +183,9 @@ func (this *AesGcm) AuthenticateThenDecrypt(mac *[16]byte, plain_text, associate
 		this.n[15] = 1
 		c = 1
 	} else {
-		this.ghash(&tag, &this.null, nonce)
+		this.Ghash(t, null, nonce)
 		for i = 0; i < 16; i++ {
-			this.n[i] = tag[i]
+			this.n[i] = t[i]
 		}
 		y0_12 = this.n[12]
 		y0_13 = this.n[13]
@@ -194,9 +194,9 @@ func (this *AesGcm) AuthenticateThenDecrypt(mac *[16]byte, plain_text, associate
 		c = (uint(y0_12) << 24) | (uint(y0_13) << 16) | (uint(y0_14) << 8) | uint(y0_15)
 	}
 
-	fmt.Printf("[H]             = %x\n", this.h)
-	this.ghash(&tag, associated_data, cipher_text)
-	fmt.Printf("[GHASH]         = %x\n", tag)
+	fmt.Printf("[H]             = %x %x\n", this.h1, this.h0)
+	this.Ghash(t, associated_data, cipher_text)
+	fmt.Printf("[GHASH]         = %x\n", t)
 	// Compute Y0
 	fmt.Printf("[Y0]            = %x\n", this.n)
 	// Compute E(K,Y0)
@@ -204,15 +204,15 @@ func (this *AesGcm) AuthenticateThenDecrypt(mac *[16]byte, plain_text, associate
 	fmt.Printf("[E(K,Y0)]       = %x\n", this.y)
 	// Compute and compare GHASH^E(K,Y0)
 	for i = 0; i < 16; i++ {
-		tag[i] ^= this.y[i]
-		if mac[i] != tag[i] {
+		t[i] ^= this.y[i]
+		if tag[i] != t[i] {
 			return false
 		}
 	}
-	fmt.Printf("[GHASH^E(K,Y0)] = %x\n", tag)
+	fmt.Printf("[GHASH^E(K,Y0)] = %x\n", t)
 
 	// Decryption of the cipher text
-	n = uint(len(*cipher_text))
+	n = uint(len(cipher_text))
 	modn = n & 0xf
 	n >>= 4
 	for i = 0; i < n; i++ {
@@ -228,7 +228,7 @@ func (this *AesGcm) AuthenticateThenDecrypt(mac *[16]byte, plain_text, associate
 		fmt.Printf("[E(K,Y%d)]       = %x\n", c-1, this.y)
 		// Compute Ci = Pi xor E(K,Yi)
 		for j = 0; j < 16; j++ {
-			(*plain_text)[(i<<4)+j] = (*cipher_text)[(i<<4)+j] ^ this.y[j]
+			plain_text[(i<<4)+j] = cipher_text[(i<<4)+j] ^ this.y[j]
 		}
 	}
 	if modn > 0 {
@@ -244,14 +244,14 @@ func (this *AesGcm) AuthenticateThenDecrypt(mac *[16]byte, plain_text, associate
 		fmt.Printf("[E(K,Y%d)]       = %x\n", c-1, this.y)
 		// Compute Cn = Pn xor MSBv( E(K,Yn) )
 		for j = 0; j < modn; j++ {
-			(*plain_text)[(n<<4)+j] = (*cipher_text)[(n<<4)+j] ^ this.y[j]
+			plain_text[(n<<4)+j] = cipher_text[(n<<4)+j] ^ this.y[j]
 		}
 	}
 	fmt.Printf("\n")
 	return true
 }
 
-func (this *AesGcm) ghash(tag *[16]byte, a, c *[]byte) {
+func (this *AesGcm) Ghash(tag []byte, a, c []byte) {
 
 	// GHASH(H, A, C) = Xm+n+1 where the variables Xi for i = 0,...,m+n+1 are defined as:
 	//
@@ -280,12 +280,12 @@ func (this *AesGcm) ghash(tag *[16]byte, a, c *[]byte) {
 	var x0, x1, a0, a1 uint64
 	var i, j, k uint
 
-	m := uint(len(*a))
+	m := uint(len(a))
 	modm := m & 0xf
 	v := uint64(m) << 3
 	m >>= 4
 
-	n := uint(len(*c))
+	n := uint(len(c))
 	modn := n & 0xf
 	u := uint64(n) << 3
 	n >>= 4
@@ -299,10 +299,10 @@ func (this *AesGcm) ghash(tag *[16]byte, a, c *[]byte) {
 		a0 = 0
 		a1 = 0
 		for j = 0; j < 8; j++ {
-			a1 += uint64((*a)[(i<<4)+j]) << (56 - (j << 3))
+			a1 += uint64(a[(i<<4)+j]) << (56 - (j << 3))
 		}
 		for j = 8; j < 16; j++ {
-			a0 += uint64((*a)[(i<<4)+j]) << (56 - ((j - 8) << 3))
+			a0 += uint64(a[(i<<4)+j]) << (56 - ((j - 8) << 3))
 		}
 		// Compute Xi = (Xi−1 xor Ai) * H
 		x0, x1 = this.multH(x0^a0, x1^a1)
@@ -320,12 +320,12 @@ func (this *AesGcm) ghash(tag *[16]byte, a, c *[]byte) {
 			k = 8
 		}
 		for j = 0; j < k; j++ {
-			a1 += uint64((*a)[(m<<4)+j]) << (56 - (j << 3))
+			a1 += uint64(a[(m<<4)+j]) << (56 - (j << 3))
 		}
 		if modm > 8 {
 			k = modm
 			for j = 8; j < k; j++ {
-				a0 += uint64((*a)[(m<<4)+j]) << (56 - ((j - 8) << 3))
+				a0 += uint64(a[(m<<4)+j]) << (56 - ((j - 8) << 3))
 			}
 		}
 		// Compute Xm = (Xm-1 xor (Am || 0^(128−v)) * H
@@ -339,10 +339,10 @@ func (this *AesGcm) ghash(tag *[16]byte, a, c *[]byte) {
 		a0 = 0
 		a1 = 0
 		for j = 0; j < 8; j++ {
-			a1 += uint64((*c)[(i<<4)+j]) << (56 - (j << 3))
+			a1 += uint64(c[(i<<4)+j]) << (56 - (j << 3))
 		}
 		for j = 8; j < 16; j++ {
-			a0 += uint64((*c)[(i<<4)+j]) << (56 - ((j - 8) << 3))
+			a0 += uint64(c[(i<<4)+j]) << (56 - ((j - 8) << 3))
 		}
 		// Compute Xi = (Xi−1 xor Ci−m) * H
 		x0, x1 = this.multH(x0^a0, x1^a1)
@@ -360,12 +360,12 @@ func (this *AesGcm) ghash(tag *[16]byte, a, c *[]byte) {
 			k = 8
 		}
 		for j = 0; j < k; j++ {
-			a1 += uint64((*c)[(n<<4)+j]) << (56 - (j << 3))
+			a1 += uint64(c[(n<<4)+j]) << (56 - (j << 3))
 		}
 		if modn > 8 {
 			k = modn
 			for j = 8; j < k; j++ {
-				a0 += uint64((*c)[(n<<4)+j]) << (56 - ((j - 8) << 3))
+				a0 += uint64(c[(n<<4)+j]) << (56 - ((j - 8) << 3))
 			}
 		}
 		// Compute Xm+n = (Xm+n-1 xor (Cn||0^(128−u)) * H
@@ -465,22 +465,21 @@ func (this *AesGcm) multH(x0, x1 uint64) (z0, z1 uint64) {
 
 func main() {
 	var null []byte
-	fmt.Printf("\n* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *\n\n")
 
 	// Test Case 1 from http://csrc.nist.gov/groups/ST/toolkit/BCM/documents/proposedmodes/gcm/gcm-revised-spec.pdf
 	test_AES_GCM(
 		toByte("00000000000000000000000000000000"), // key
 		toByte("000000000000000000000000"),         // nonce
-		&null, // aad
-		&null, // plain text
-		&null, // waiting cipher
+		null, // aad
+		null, // plain text
+		null, // waiting cipher
 		toByte("58e2fccefa7e3061367f1d57a4e7455a")) // waiting tag
 
 	// Test Case 2 from http://csrc.nist.gov/groups/ST/toolkit/BCM/documents/proposedmodes/gcm/gcm-revised-spec.pdf
 	test_AES_GCM(
 		toByte("00000000000000000000000000000000"), // key
 		toByte("000000000000000000000000"),         // nonce
-		&null, // aad
+		null, // aad
 		toByte("00000000000000000000000000000000"), // plain text
 		toByte("0388dace60b6a392f328c2b971b2fe78"), // waiting cipher
 		toByte("ab6e47d42cec13bdf53a67b21257bddf")) // waiting tag
@@ -489,7 +488,7 @@ func main() {
 	test_AES_GCM(
 		toByte("feffe9928665731c6d6a8f9467308308"), // key
 		toByte("cafebabefacedbaddecaf888"),         // nonce
-		&null, // aad
+		null, // aad
 		toByte("d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b391aafd255"), // plain text
 		toByte("42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e091473f5985"), // waiting cipher
 		toByte("4d5c2af327cd64a62cf35abd2ba6fab4"))                                                                                                 // waiting tag
@@ -525,16 +524,16 @@ func main() {
 	test_AES_GCM(
 		toByte("000000000000000000000000000000000000000000000000"), // key
 		toByte("000000000000000000000000"),                         // nonce
-		&null, // aad
-		&null, // plain text
-		&null, // waiting cipher
+		null, // aad
+		null, // plain text
+		null, // waiting cipher
 		toByte("cd33b28ac773f74ba00ed1f312572435")) // waiting tag
 
 	// Test Case 8 from http://csrc.nist.gov/groups/ST/toolkit/BCM/documents/proposedmodes/gcm/gcm-revised-spec.pdf
 	test_AES_GCM(
 		toByte("000000000000000000000000000000000000000000000000"), // key
 		toByte("000000000000000000000000"),                         // nonce
-		&null, // aad
+		null, // aad
 		toByte("00000000000000000000000000000000"), // plain text
 		toByte("98e7247c07f0fe411c267e4384b0f600"), // waiting cipher
 		toByte("2ff58d80033927ab8ef4d4587514f0fb")) // waiting tag
@@ -543,7 +542,7 @@ func main() {
 	test_AES_GCM(
 		toByte("feffe9928665731c6d6a8f9467308308feffe9928665731c"), // key
 		toByte("cafebabefacedbaddecaf888"),                         // nonce
-		&null, // aad
+		null, // aad
 		toByte("d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b391aafd255"), // plain text
 		toByte("3980ca0b3c00e841eb06fac4872a2757859e1ceaa6efd984628593b40ca1e19c7d773d00c144c525ac619d18c84a3f4718e2448b2fe324d9ccda2710acade256"), // waiting cipher
 		toByte("9924a7c8587336bfb118024db8674a14"))                                                                                                 // waiting tag
@@ -579,16 +578,16 @@ func main() {
 	test_AES_GCM(
 		toByte("0000000000000000000000000000000000000000000000000000000000000000"), // key
 		toByte("000000000000000000000000"),                                         // nonce
-		&null, // aad
-		&null, // plain text
-		&null, // waiting cipher
+		null, // aad
+		null, // plain text
+		null, // waiting cipher
 		toByte("530f8afbc74536b9a963b4f1c4cb738b")) // waiting tag
 
 	// Test Case 14 from http://csrc.nist.gov/groups/ST/toolkit/BCM/documents/proposedmodes/gcm/gcm-revised-spec.pdf
 	test_AES_GCM(
 		toByte("0000000000000000000000000000000000000000000000000000000000000000"), // key
 		toByte("000000000000000000000000"),                                         // nonce
-		&null, // aad
+		null, // aad
 		toByte("00000000000000000000000000000000"), // plain text
 		toByte("cea7403d4d606b6e074ec5d3baf39d18"), // waiting cipher
 		toByte("d0d1c8a799996bf0265b98b5d48ab919")) // waiting tag
@@ -597,7 +596,7 @@ func main() {
 	test_AES_GCM(
 		toByte("feffe9928665731c6d6a8f9467308308feffe9928665731c6d6a8f9467308308"), // key
 		toByte("cafebabefacedbaddecaf888"),                                         // nonce
-		&null, // aad
+		null, // aad
 		toByte("d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b391aafd255"), // plain text
 		toByte("522dc1f099567d07f47f37a32a84427d643a8cdcbfe5c0c97598a2bd2555d1aa8cb08e48590dbb3da7b08b1056828838c5f61e6393ba7a0abcc9f662898015ad"), // waiting cipher
 		toByte("b094dac5d93471bdec1a502270e3cc6c"))                                                                                                 // waiting tag
@@ -630,7 +629,7 @@ func main() {
 		toByte("a44a8266ee1c8eb0c8b5d4cf5ae9f19a"))                                                                                         // waiting tag
 }
 
-func toByte(s string) *[]byte {
+func toByte(s string) []byte {
 	bs := []byte(strings.ToLower(s))
 	b := make([]byte, len(bs)/2)
 
@@ -648,47 +647,43 @@ func toByte(s string) *[]byte {
 			b[i] += (bs[i*2+1] - 'a' + 10)
 		}
 	}
-	return &b
+	return b
 }
 
-func test_AES_GCM(key, nonce, aad, plaintext, ciphertext, tag *[]byte) {
+func test_AES_GCM(key, nonce, aad, plaintext, ciphertext, tag []byte) {
 	fmt.Printf("\n~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~\n\n")
 	testEncrypt_AES_GCM(key, nonce, aad, plaintext, ciphertext, tag)
 	testDecrypt_AES_GCM(key, nonce, aad, plaintext, ciphertext, tag)
 }
 
-func testDecrypt_AES_GCM(key, nonce, aad, plaintext, ciphertext, tag *[]byte) {
-	var t [16]byte
-	pt := make([]byte, len(*ciphertext))
-	aead := NewAesGcm(key)
-
-	for i := 0; i < 16; i++ {
-		t[i] = (*tag)[i]
-	}
-	fmt.Printf("----------------\nDECRYPTION TEST:\n----------------\n")
-	fmt.Printf("Key             : [%d] %x\n", len(*key), *key)
-	fmt.Printf("Nonce           : [%d] %x\n", len(*nonce), *nonce)
-	fmt.Printf("Associated data : [%d] %x\n", len(*aad), *aad)
-	fmt.Printf("Cipher text     : [%d] %x\n", len(*ciphertext), *ciphertext)
-	fmt.Printf("Tag             : [%d] %x\n\n", len(*tag), *tag)
-	fmt.Printf("Authenticate    ?      %v\n\n", aead.AuthenticateThenDecrypt(&t, &pt, aad, ciphertext, nonce))
-	fmt.Printf("Plain text      : [%d] %x\n", len(pt), pt)
-	fmt.Printf("< Waiting Plain > [%d] %x\n\n", len(*plaintext), *plaintext)
-}
-
-func testEncrypt_AES_GCM(key, nonce, aad, plaintext, ciphertext, tag *[]byte) {
-	var t [16]byte
-	ct := make([]byte, len(*plaintext))
+func testEncrypt_AES_GCM(key, nonce, aad, plaintext, ciphertext, tag []byte) {
+	t := make([]byte, len(tag))
+	ct := make([]byte, len(plaintext))
 	aead := NewAesGcm(key)
 
 	fmt.Printf("----------------\nENCRYPTION TEST:\n----------------\n")
-	fmt.Printf("Key             : [%d] %x\n", len(*key), *key)
-	fmt.Printf("Nonce           : [%d] %x\n", len(*nonce), *nonce)
-	fmt.Printf("Associated data : [%d] %x\n", len(*aad), *aad)
-	fmt.Printf("Plain text      : [%d] %x\n\n", len(*plaintext), *plaintext)
-	aead.EncryptThenMac(&t, &ct, aad, plaintext, nonce)
+	fmt.Printf("Key             : [%d] %x\n", len(key), key)
+	fmt.Printf("Nonce           : [%d] %x\n", len(nonce), nonce)
+	fmt.Printf("Associated data : [%d] %x\n", len(aad), aad)
+	fmt.Printf("Plain text      : [%d] %x\n\n", len(plaintext), plaintext)
+	aead.EncryptThenMac(t, ct, aad, plaintext, nonce)
 	fmt.Printf("Cipher text     : [%d] %x\n", len(ct), ct)
-	fmt.Printf("< Waiting cipher >[%d] %x\n\n", len(*ciphertext), *ciphertext)
+	fmt.Printf("< Waiting cipher >[%d] %x\n\n", len(ciphertext), ciphertext)
 	fmt.Printf("Tag             : [%d] %x\n", len(t), t)
-	fmt.Printf("<   Waiting tag  >[%d] %x\n\n", len(*tag), *tag)
+	fmt.Printf("<   Waiting tag  >[%d] %x\n\n", len(tag), tag)
+}
+
+func testDecrypt_AES_GCM(key, nonce, aad, plaintext, ciphertext, tag []byte) {
+	pt := make([]byte, len(ciphertext))
+	aead := NewAesGcm(key)
+
+	fmt.Printf("----------------\nDECRYPTION TEST:\n----------------\n")
+	fmt.Printf("Key             : [%d] %x\n", len(key), key)
+	fmt.Printf("Nonce           : [%d] %x\n", len(nonce), nonce)
+	fmt.Printf("Associated data : [%d] %x\n", len(aad), aad)
+	fmt.Printf("Cipher text     : [%d] %x\n", len(ciphertext), ciphertext)
+	fmt.Printf("Tag             : [%d] %x\n\n", len(tag), tag)
+	fmt.Printf("Authenticate    ?      %v\n\n", aead.AuthenticateThenDecrypt(tag, pt, aad, ciphertext, nonce))
+	fmt.Printf("Plain text      : [%d] %x\n", len(pt), pt)
+	fmt.Printf("< Waiting Plain > [%d] %x\n\n", len(plaintext), plaintext)
 }

@@ -10,6 +10,7 @@ type AesGcm struct {
 	y      []byte
 	h      []byte
 	n      []byte
+	null   []byte
 	h0     uint64
 	h1     uint64
 }
@@ -57,21 +58,42 @@ func (this *AesGcm) EncryptThenMac(tag *[16]byte, cipher_text, associated_data, 
 	// T = MSBt( GHASH(H,A,C) xor E(K, Y0) )
 
 	var c, i, j, n, modn uint
+	var y0_12, y0_13, y0_14, y0_15 byte
 
 	if len(*cipher_text) < len(*plain_text) {
 		return false
 	}
 
 	// Compute Nonce prefix
-	for i = 0; i < 12; i++ {
-		this.n[i] = (*nonce)[i]
+	//   * For a fix value of the key, each Nonce must be distinct, but need not have equal lengths.
+	//   * 96-bit nonce values can be processed more efficiently, so that length is recommended for situations in which efficiency is critical.
+	//   * If an IV with a length other than 96 bits is used with a particular key, then that key must be used with a tag length of 128.
+	//   * The nonce is authenticated, and it is not necessary to include it in the AAD field.
+	if len(*nonce) == 12 {
+		for i = 0; i < 12; i++ {
+			this.n[i] = (*nonce)[i]
+			y0_12 = 0
+			y0_13 = 0
+			y0_14 = 0
+			y0_15 = 1
+		}
+		c = 1
+	} else {
+		this.ghash(tag, &this.null, nonce)
+		for i = 0; i < 16; i++ {
+			this.n[i] = tag[i]
+		}
+		y0_12 = this.n[12]
+		y0_13 = this.n[13]
+		y0_14 = this.n[14]
+		y0_15 = this.n[15]
+		c = (uint(y0_12) << 24) | (uint(y0_13) << 16) | (uint(y0_14) << 8) | uint(y0_15)
 	}
 
 	// Encryption of the plain text
 	n = uint(len(*plain_text))
 	modn = n & 0xf
 	n >>= 4
-	c = 1
 	for i = 0; i < n; i++ {
 		// Compute Yi = incr(Yi−1)
 		c++
@@ -109,13 +131,10 @@ func (this *AesGcm) EncryptThenMac(tag *[16]byte, cipher_text, associated_data, 
 	this.ghash(tag, associated_data, cipher_text)
 	fmt.Printf("[GHASH]         = %x\n", *tag)
 	// Compute Y0
-	for i = 0; i < 12; i++ {
-		this.y[i] = (*nonce)[i]
-	}
-	this.n[12] = 0
-	this.n[13] = 0
-	this.n[14] = 0
-	this.n[15] = 1
+	this.n[12] = y0_12
+	this.n[13] = y0_13
+	this.n[14] = y0_14
+	this.n[15] = y0_15
 	fmt.Printf("[Y0]            = %x\n", this.n)
 	// Compute E(K,Y0)
 	this.cipher.Encrypt(this.y, this.n)
@@ -124,8 +143,7 @@ func (this *AesGcm) EncryptThenMac(tag *[16]byte, cipher_text, associated_data, 
 	for i = 0; i < 16; i++ {
 		tag[i] ^= this.y[i]
 	}
-	fmt.Printf("[GHASH^E(K,Y0)] = %x\n", *tag)
-	fmt.Printf("\n")
+	fmt.Printf("[GHASH^E(K,Y0)] = %x\n\n", *tag)
 	return true
 }
 
@@ -147,6 +165,7 @@ func (this *AesGcm) AuthenticateThenDecrypt(mac *[16]byte, plain_text, associate
 	// Pn = Cn xor MSBu( E(K,Yn) )
 
 	var c, i, j, n, modn uint
+	var y0_12, y0_13, y0_14, y0_15 byte
 	var tag [16]byte
 
 	if len(*cipher_text) < len(*plain_text) {
@@ -154,18 +173,31 @@ func (this *AesGcm) AuthenticateThenDecrypt(mac *[16]byte, plain_text, associate
 	}
 
 	// Compute nonce prefix
-	for i = 0; i < 12; i++ {
-		this.n[i] = (*nonce)[i]
+	if len(*nonce) == 12 {
+		for i = 0; i < 12; i++ {
+			this.n[i] = (*nonce)[i]
+		}
+		this.n[12] = 0
+		this.n[13] = 0
+		this.n[14] = 0
+		this.n[15] = 1
+		c = 1
+	} else {
+		this.ghash(&tag, &this.null, nonce)
+		for i = 0; i < 16; i++ {
+			this.n[i] = tag[i]
+		}
+		y0_12 = this.n[12]
+		y0_13 = this.n[13]
+		y0_14 = this.n[14]
+		y0_15 = this.n[15]
+		c = (uint(y0_12) << 24) | (uint(y0_13) << 16) | (uint(y0_14) << 8) | uint(y0_15)
 	}
 
 	fmt.Printf("[H]             = %x\n", this.h)
 	this.ghash(&tag, associated_data, cipher_text)
 	fmt.Printf("[GHASH]         = %x\n", tag)
 	// Compute Y0
-	this.n[12] = 0
-	this.n[13] = 0
-	this.n[14] = 0
-	this.n[15] = 1
 	fmt.Printf("[Y0]            = %x\n", this.n)
 	// Compute E(K,Y0)
 	this.cipher.Encrypt(this.y, this.n)
@@ -178,13 +210,11 @@ func (this *AesGcm) AuthenticateThenDecrypt(mac *[16]byte, plain_text, associate
 		}
 	}
 	fmt.Printf("[GHASH^E(K,Y0)] = %x\n", tag)
-	fmt.Printf("\n")
 
 	// Decryption of the cipher text
 	n = uint(len(*cipher_text))
 	modn = n & 0xf
 	n >>= 4
-	c = 1
 	for i = 0; i < n; i++ {
 		// Compute Yi = incr(Yi−1)
 		c++
@@ -217,6 +247,7 @@ func (this *AesGcm) AuthenticateThenDecrypt(mac *[16]byte, plain_text, associate
 			(*plain_text)[(n<<4)+j] = (*cipher_text)[(n<<4)+j] ^ this.y[j]
 		}
 	}
+	fmt.Printf("\n")
 	return true
 }
 
@@ -471,16 +502,16 @@ func main() {
 		toByte("d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39"), // plain text
 		toByte("42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e091"), // waiting cipher
 		toByte("5bc94fbc3221a5db94fae95ae7121a47"))                                                                                         // waiting tag
-	/*
-		// Test Case 5 from http://csrc.nist.gov/groups/ST/toolkit/BCM/documents/proposedmodes/gcm/gcm-revised-spec.pdf
-		test_AES_GCM(
-			toByte("feffe9928665731c6d6a8f9467308308"),                                                                                         // key
-			toByte("cafebabefacedbad"),                                                                                                         // nonce
-			toByte("feedfacedeadbeeffeedfacedeadbeefabaddad2"),                                                                                 // aad
-			toByte("d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39"), // plain text
-			toByte("61353b4c2806934a777ff51fa22a4755699b2a714fcdc6f83766e5f97b6c742373806900e49f24b22b097544d4896b424989b5e1ebac0f07c23f4598"),         // waiting cipher
-			toByte("3612d2e79e3b0785561be14aaca2fccb"))                                                                                                 // waiting tag
-	*/
+
+	// Test Case 5 from http://csrc.nist.gov/groups/ST/toolkit/BCM/documents/proposedmodes/gcm/gcm-revised-spec.pdf
+	test_AES_GCM(
+		toByte("feffe9928665731c6d6a8f9467308308"),                                                                                         // key
+		toByte("cafebabefacedbad"),                                                                                                         // nonce
+		toByte("feedfacedeadbeeffeedfacedeadbeefabaddad2"),                                                                                 // aad
+		toByte("d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39"), // plain text
+		toByte("61353b4c2806934a777ff51fa22a4755699b2a714fcdc6f83766e5f97b6c742373806900e49f24b22b097544d4896b424989b5e1ebac0f07c23f4598"), // waiting cipher
+		toByte("3612d2e79e3b0785561be14aaca2fccb"))                                                                                         // waiting tag
+
 	// Test Case 6 from http://csrc.nist.gov/groups/ST/toolkit/BCM/documents/proposedmodes/gcm/gcm-revised-spec.pdf
 	test_AES_GCM(
 		toByte("feffe9928665731c6d6a8f9467308308"),                                                                                         // key
@@ -525,16 +556,16 @@ func main() {
 		toByte("d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39"), // plain text
 		toByte("3980ca0b3c00e841eb06fac4872a2757859e1ceaa6efd984628593b40ca1e19c7d773d00c144c525ac619d18c84a3f4718e2448b2fe324d9ccda2710"), // waiting cipher
 		toByte("2519498e80f1478f37ba55bd6d27618c"))                                                                                         // waiting tag
-	/*
-		// Test Case 11 from http://csrc.nist.gov/groups/ST/toolkit/BCM/documents/proposedmodes/gcm/gcm-revised-spec.pdf
-		test_AES_GCM(
-			toByte("feffe9928665731c6d6a8f9467308308feffe9928665731c"),                                                                         // key
-			toByte("cafebabefacedbad"),                                                                                                         // nonce
-			toByte("feedfacedeadbeeffeedfacedeadbeefabaddad2"),                                                                                 // aad
-			toByte("d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39"), // plain text
-			toByte("0f10f599ae14a154ed24b36e25324db8c566632ef2bbb34f8347280fc4507057fddc29df9a471f75c66541d4d4dad1c9e93a19a58e8b473fa0f062f7"),         // waiting cipher
-			toByte("65dcc57fcf623a24094fcca40d3533f8"))                                                                                                 // waiting tag
-	*/
+
+	// Test Case 11 from http://csrc.nist.gov/groups/ST/toolkit/BCM/documents/proposedmodes/gcm/gcm-revised-spec.pdf
+	test_AES_GCM(
+		toByte("feffe9928665731c6d6a8f9467308308feffe9928665731c"),                                                                         // key
+		toByte("cafebabefacedbad"),                                                                                                         // nonce
+		toByte("feedfacedeadbeeffeedfacedeadbeefabaddad2"),                                                                                 // aad
+		toByte("d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39"), // plain text
+		toByte("0f10f599ae14a154ed24b36e25324db8c566632ef2bbb34f8347280fc4507057fddc29df9a471f75c66541d4d4dad1c9e93a19a58e8b473fa0f062f7"), // waiting cipher
+		toByte("65dcc57fcf623a24094fcca40d3533f8"))                                                                                         // waiting tag
+
 	// Test Case 12 from http://csrc.nist.gov/groups/ST/toolkit/BCM/documents/proposedmodes/gcm/gcm-revised-spec.pdf
 	test_AES_GCM(
 		toByte("feffe9928665731c6d6a8f9467308308feffe9928665731c"),                                                                         // key
@@ -579,17 +610,16 @@ func main() {
 		toByte("d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39"), // plain text
 		toByte("522dc1f099567d07f47f37a32a84427d643a8cdcbfe5c0c97598a2bd2555d1aa8cb08e48590dbb3da7b08b1056828838c5f61e6393ba7a0abcc9f662"), // waiting cipher
 		toByte("76fc6ece0f4e1768cddf8853bb2d551b"))                                                                                         // waiting tag
-	/*
-		// Test Case 17 from http://csrc.nist.gov/groups/ST/toolkit/BCM/documents/proposedmodes/gcm/gcm-revised-spec.pdf
-		test_AES_GCM(
-			toByte("feffe9928665731c6d6a8f9467308308feffe9928665731c6d6a8f9467308308"),                                                         // key
-			toByte("cafebabefacedbad"),                                                                                                         // nonce
-			toByte("feedfacedeadbeeffeedfacedeadbeefabaddad2"),                                                                                 // aad
-			toByte("d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39"), // plain text
-			toByte("c3762df1ca787d32ae47c13bf19844cbaf1ae14d0b976afac52ff7d79bba9de0feb582d33934a4f0954cc2363bc73f7862ac430e64abe499f47c9b1f"),         // waiting cipher
-			toByte("3a337dbf46a792c45e454913fe2ea8f2"))                                                                                                 // waiting tag
 
-	*/
+	// Test Case 17 from http://csrc.nist.gov/groups/ST/toolkit/BCM/documents/proposedmodes/gcm/gcm-revised-spec.pdf
+	test_AES_GCM(
+		toByte("feffe9928665731c6d6a8f9467308308feffe9928665731c6d6a8f9467308308"),                                                         // key
+		toByte("cafebabefacedbad"),                                                                                                         // nonce
+		toByte("feedfacedeadbeeffeedfacedeadbeefabaddad2"),                                                                                 // aad
+		toByte("d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39"), // plain text
+		toByte("c3762df1ca787d32ae47c13bf19844cbaf1ae14d0b976afac52ff7d79bba9de0feb582d33934a4f0954cc2363bc73f7862ac430e64abe499f47c9b1f"), // waiting cipher
+		toByte("3a337dbf46a792c45e454913fe2ea8f2"))                                                                                         // waiting tag
+
 	// Test Case 18 from http://csrc.nist.gov/groups/ST/toolkit/BCM/documents/proposedmodes/gcm/gcm-revised-spec.pdf
 	test_AES_GCM(
 		toByte("feffe9928665731c6d6a8f9467308308feffe9928665731c6d6a8f9467308308"),                                                         // key
@@ -622,7 +652,7 @@ func toByte(s string) *[]byte {
 }
 
 func test_AES_GCM(key, nonce, aad, plaintext, ciphertext, tag *[]byte) {
-	fmt.Printf("\n~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~\n")
+	fmt.Printf("\n~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~\n\n")
 	testEncrypt_AES_GCM(key, nonce, aad, plaintext, ciphertext, tag)
 	testDecrypt_AES_GCM(key, nonce, aad, plaintext, ciphertext, tag)
 }
@@ -635,16 +665,15 @@ func testDecrypt_AES_GCM(key, nonce, aad, plaintext, ciphertext, tag *[]byte) {
 	for i := 0; i < 16; i++ {
 		t[i] = (*tag)[i]
 	}
-	fmt.Printf("DECRYPTION TEST:\n----------------\n")
+	fmt.Printf("----------------\nDECRYPTION TEST:\n----------------\n")
 	fmt.Printf("Key             : [%d] %x\n", len(*key), *key)
 	fmt.Printf("Nonce           : [%d] %x\n", len(*nonce), *nonce)
 	fmt.Printf("Associated data : [%d] %x\n", len(*aad), *aad)
 	fmt.Printf("Cipher text     : [%d] %x\n", len(*ciphertext), *ciphertext)
 	fmt.Printf("Tag             : [%d] %x\n\n", len(*tag), *tag)
-	fmt.Printf("Authenticate    :      %v\n", aead.AuthenticateThenDecrypt(&t, &pt, aad, ciphertext, nonce))
+	fmt.Printf("Authenticate    ?      %v\n\n", aead.AuthenticateThenDecrypt(&t, &pt, aad, ciphertext, nonce))
 	fmt.Printf("Plain text      : [%d] %x\n", len(pt), pt)
-	fmt.Printf("Waiting Plain --> [%d] %x\n", len(*plaintext), *plaintext)
-	fmt.Printf("----------------\n")
+	fmt.Printf("< Waiting Plain > [%d] %x\n\n", len(*plaintext), *plaintext)
 }
 
 func testEncrypt_AES_GCM(key, nonce, aad, plaintext, ciphertext, tag *[]byte) {
@@ -652,15 +681,14 @@ func testEncrypt_AES_GCM(key, nonce, aad, plaintext, ciphertext, tag *[]byte) {
 	ct := make([]byte, len(*plaintext))
 	aead := NewAesGcm(key)
 
-	fmt.Printf("ENCRYPTION TEST:\n----------------\n")
+	fmt.Printf("----------------\nENCRYPTION TEST:\n----------------\n")
 	fmt.Printf("Key             : [%d] %x\n", len(*key), *key)
 	fmt.Printf("Nonce           : [%d] %x\n", len(*nonce), *nonce)
 	fmt.Printf("Associated data : [%d] %x\n", len(*aad), *aad)
 	fmt.Printf("Plain text      : [%d] %x\n\n", len(*plaintext), *plaintext)
 	aead.EncryptThenMac(&t, &ct, aad, plaintext, nonce)
 	fmt.Printf("Cipher text     : [%d] %x\n", len(ct), ct)
-	fmt.Printf("Waiting cipher--> [%d] %x\n", len(*ciphertext), *ciphertext)
+	fmt.Printf("< Waiting cipher >[%d] %x\n\n", len(*ciphertext), *ciphertext)
 	fmt.Printf("Tag             : [%d] %x\n", len(t), t)
-	fmt.Printf("Waiting tag-----> [%d] %x\n", len(*tag), *tag)
-	fmt.Printf("----------------\n")
+	fmt.Printf("<   Waiting tag  >[%d] %x\n\n", len(*tag), *tag)
 }

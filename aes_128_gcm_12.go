@@ -3,6 +3,7 @@ package main
 import "crypto/aes"
 import "crypto/cipher"
 
+import "bytes"
 import "strings"
 import "fmt"
 
@@ -79,7 +80,7 @@ func (this *AesGcm) EncryptThenMac(tag, cipher_text, associated_data, plain_text
 		}
 		c = 1
 	} else {
-		this.Ghash(tag, null, nonce)
+		this.ghash(tag, null, nonce)
 		for i = 0; i < 16; i++ {
 			this.n[i] = tag[i]
 		}
@@ -101,10 +102,8 @@ func (this *AesGcm) EncryptThenMac(tag, cipher_text, associated_data, plain_text
 		this.n[14] = byte((c >> 8) & 0xff)
 		this.n[13] = byte((c >> 16) & 0xff)
 		this.n[12] = byte((c >> 24) & 0xff)
-		fmt.Printf("[Y%d]            = %x\n", c-1, this.n)
 		// Compute E(K,Yi)
 		this.cipher.Encrypt(this.y, this.n)
-		fmt.Printf("[E(K,Y%d)]       = %x\n", c-1, this.y)
 		// Compute Ci = Pi xor E(K,Yi)
 		for j = 0; j < 16; j++ {
 			cipher_text[(i<<4)+j] = plain_text[(i<<4)+j] ^ this.y[j]
@@ -117,33 +116,26 @@ func (this *AesGcm) EncryptThenMac(tag, cipher_text, associated_data, plain_text
 		this.n[14] = byte((c >> 8) & 0xff)
 		this.n[13] = byte((c >> 16) & 0xff)
 		this.n[12] = byte((c >> 24) & 0xff)
-		fmt.Printf("[Y%d]            = %x\n", c-1, this.n)
 		// Compute E(K,Yn)
 		this.cipher.Encrypt(this.y, this.n)
-		fmt.Printf("[E(K,Y%d)]       = %x\n", c-1, this.y)
 		// Compute Cn = Pn xor MSBv( E(K,Yn) )
 		for j = 0; j < modn; j++ {
 			cipher_text[(n<<4)+j] = plain_text[(n<<4)+j] ^ this.y[j]
 		}
 	}
 
-	fmt.Printf("[H]             = %x %x\n", this.h1, this.h0)
-	this.Ghash(tag, associated_data, cipher_text)
-	fmt.Printf("[GHASH]         = %x\n", tag)
+	this.ghash(tag, associated_data, cipher_text)
 	// Compute Y0
 	this.n[12] = y0_12
 	this.n[13] = y0_13
 	this.n[14] = y0_14
 	this.n[15] = y0_15
-	fmt.Printf("[Y0]            = %x\n", this.n)
 	// Compute E(K,Y0)
 	this.cipher.Encrypt(this.y, this.n)
-	fmt.Printf("[E(K,Y0)]       = %x\n", this.y)
 	// Compute GHASH^E(K,Y0)
 	for i = 0; i < 16; i++ {
 		tag[i] ^= this.y[i]
 	}
-	fmt.Printf("[GHASH^E(K,Y0)] = %x\n\n", tag)
 	return true
 }
 
@@ -184,7 +176,7 @@ func (this *AesGcm) AuthenticateThenDecrypt(tag, plain_text, associated_data, ci
 		this.n[15] = 1
 		c = 1
 	} else {
-		this.Ghash(t, null, nonce)
+		this.ghash(t, null, nonce)
 		for i = 0; i < 16; i++ {
 			this.n[i] = t[i]
 		}
@@ -195,14 +187,10 @@ func (this *AesGcm) AuthenticateThenDecrypt(tag, plain_text, associated_data, ci
 		c = (uint32(y0_12) << 24) | (uint32(y0_13) << 16) | (uint32(y0_14) << 8) | uint32(y0_15)
 	}
 
-	fmt.Printf("[H]             = %x %x\n", this.h1, this.h0)
-	this.Ghash(t, associated_data, cipher_text)
-	fmt.Printf("[GHASH]         = %x\n", t)
+	this.ghash(t, associated_data, cipher_text)
 	// Compute Y0
-	fmt.Printf("[Y0]            = %x\n", this.n)
 	// Compute E(K,Y0)
 	this.cipher.Encrypt(this.y, this.n)
-	fmt.Printf("[E(K,Y0)]       = %x\n", this.y)
 	// Compute and compare GHASH^E(K,Y0)
 	for i = 0; i < 16; i++ {
 		t[i] ^= this.y[i]
@@ -210,7 +198,6 @@ func (this *AesGcm) AuthenticateThenDecrypt(tag, plain_text, associated_data, ci
 			return false
 		}
 	}
-	fmt.Printf("[GHASH^E(K,Y0)] = %x\n", t)
 
 	// Decryption of the cipher text
 	n = uint32(len(cipher_text))
@@ -223,10 +210,8 @@ func (this *AesGcm) AuthenticateThenDecrypt(tag, plain_text, associated_data, ci
 		this.n[14] = byte((c >> 8) & 0xff)
 		this.n[13] = byte((c >> 16) & 0xff)
 		this.n[12] = byte((c >> 24) & 0xff)
-		fmt.Printf("[Y%d]            = %x\n", c-1, this.n)
 		// Compute E(K,Yi)
 		this.cipher.Encrypt(this.y, this.n)
-		fmt.Printf("[E(K,Y%d)]       = %x\n", c-1, this.y)
 		// Compute Ci = Pi xor E(K,Yi)
 		for j = 0; j < 16; j++ {
 			plain_text[(i<<4)+j] = cipher_text[(i<<4)+j] ^ this.y[j]
@@ -239,20 +224,17 @@ func (this *AesGcm) AuthenticateThenDecrypt(tag, plain_text, associated_data, ci
 		this.n[14] = byte((c >> 8) & 0xff)
 		this.n[13] = byte((c >> 16) & 0xff)
 		this.n[12] = byte((c >> 24) & 0xff)
-		fmt.Printf("[Y%d]            = %x\n", c-1, this.n)
 		// Compute E(K,Yn)
 		this.cipher.Encrypt(this.y, this.n)
-		fmt.Printf("[E(K,Y%d)]       = %x\n", c-1, this.y)
 		// Compute Cn = Pn xor MSBv( E(K,Yn) )
 		for j = 0; j < modn; j++ {
 			plain_text[(n<<4)+j] = cipher_text[(n<<4)+j] ^ this.y[j]
 		}
 	}
-	fmt.Printf("\n")
 	return true
 }
 
-func (this *AesGcm) Ghash(tag []byte, a, c []byte) {
+func (this *AesGcm) ghash(tag []byte, a, c []byte) {
 
 	// GHASH(H, A, C) = Xm+n+1 where the variables Xi for i = 0,...,m+n+1 are defined as:
 	//
@@ -307,7 +289,6 @@ func (this *AesGcm) Ghash(tag []byte, a, c []byte) {
 		}
 		// Compute Xi = (Xi−1 xor Ai) * H
 		x0, x1 = this.multH(x0^a0, x1^a1)
-		fmt.Printf("[X%d]            = %x %x\n", i+1, x1, x0)
 	}
 
 	// STEP 3: Compute Xm = (Xm-1 xor (Am || 0^(128−v)) * H
@@ -331,7 +312,6 @@ func (this *AesGcm) Ghash(tag []byte, a, c []byte) {
 		}
 		// Compute Xm = (Xm-1 xor (Am || 0^(128−v)) * H
 		x0, x1 = this.multH(x0^a0, x1^a1)
-		fmt.Printf("[X%d]            = %x %x\n", m, x1, x0)
 	}
 
 	// STEP 4: Compute Xm+1 to Xm+n-1
@@ -347,7 +327,6 @@ func (this *AesGcm) Ghash(tag []byte, a, c []byte) {
 		}
 		// Compute Xi = (Xi−1 xor Ci−m) * H
 		x0, x1 = this.multH(x0^a0, x1^a1)
-		fmt.Printf("[X%d]            = %x %x\n", m+i+1, x1, x0)
 	}
 
 	// STEP 5: Compute Xm+n = (Xm+n-1 xor (Cn||0^(128−u)) * H
@@ -371,7 +350,6 @@ func (this *AesGcm) Ghash(tag []byte, a, c []byte) {
 		}
 		// Compute Xm+n = (Xm+n-1 xor (Cn||0^(128−u)) * H
 		x0, x1 = this.multH(x0^a0, x1^a1)
-		fmt.Printf("[X%d]            = %x %x\n", m+n, x1, x0)
 	}
 
 	// STEP 6: Xm+n+1 = (Xm+n xor (len(A) || len(C))) * H
@@ -669,9 +647,12 @@ func testEncrypt_AES_GCM(key, nonce, aad, plaintext, ciphertext, tag []byte) {
 	fmt.Printf("Plain text      : [%d] %x\n\n", len(plaintext), plaintext)
 	aead.EncryptThenMac(t, ct, aad, plaintext, nonce)
 	fmt.Printf("Cipher text     : [%d] %x\n", len(ct), ct)
-	fmt.Printf("< Waiting cipher >[%d] %x\n\n", len(ciphertext), ciphertext)
-	fmt.Printf("Tag             : [%d] %x\n", len(t), t)
-	fmt.Printf("<   Waiting tag  >[%d] %x\n\n", len(tag), tag)
+	fmt.Printf("Tag             : [%d] %x\n\n", len(t), t)
+	if bytes.Equal(ciphertext, ct) && bytes.Equal(tag, t) {
+		fmt.Printf("    TEST STATUS = [ PASS ]\n\n")
+	} else {
+		fmt.Printf("    TEST STATUS = [ FAIL ]\n\n")
+	}
 }
 
 func testDecrypt_AES_GCM(key, nonce, aad, plaintext, ciphertext, tag []byte) {
@@ -684,7 +665,11 @@ func testDecrypt_AES_GCM(key, nonce, aad, plaintext, ciphertext, tag []byte) {
 	fmt.Printf("Associated data : [%d] %x\n", len(aad), aad)
 	fmt.Printf("Cipher text     : [%d] %x\n", len(ciphertext), ciphertext)
 	fmt.Printf("Tag             : [%d] %x\n\n", len(tag), tag)
-	fmt.Printf("Authenticate    ?      %v\n\n", aead.AuthenticateThenDecrypt(tag, pt, aad, ciphertext, nonce))
-	fmt.Printf("Plain text      : [%d] %x\n", len(pt), pt)
-	fmt.Printf("< Waiting Plain > [%d] %x\n\n", len(plaintext), plaintext)
+	fmt.Printf("Authenticate    ?      %v\n", aead.AuthenticateThenDecrypt(tag, pt, aad, ciphertext, nonce))
+	fmt.Printf("Plain text      : [%d] %x\n\n", len(pt), pt)
+	if bytes.Equal(plaintext, pt) {
+		fmt.Printf("    TEST STATUS = [ PASS ]\n\n")
+	} else {
+		fmt.Printf("    TEST STATUS = [ FAIL ]\n\n")
+	}
 }

@@ -1,3 +1,10 @@
+// Package 'aesgcm' provides authenticated encryption with associated data primitives (AEAD)
+// for AES GCM algorithms (Advanced Encryption Standard with Galois Counter Mode)
+// as described in RFC5119 and RFC5258
+//
+// https://tools.ietf.org/html/rfc5116
+//
+// https://tools.ietf.org/html/rfc5282
 package aesgcm
 
 import "crypto/aes"
@@ -5,17 +12,24 @@ import "crypto/cipher"
 import "errors"
 
 type AEAD interface {
-	EncryptThenMac(tag, cipher_text, associated_data, plain_text, nonce []byte) bool
-	AuthenticateThenDecrypt(tag, plain_text, associated_data, cipher_text, nonce []byte) bool
+	// EncryptThenMac encrypts the plain_text in cipher_text slice, and authenticates associateddata and cipher_text in tag slice
+	// The nonce anf tag size must match the sizes corresponding with the choosen AEAD algorithm.
+	// cipher_text and plain_text must have equal size.
+	EncryptThenMac(tag, cipher_text, associateddata, plain_text, nonce []byte) bool
+
+	// AuthenticateThenDecrypt authenticates associateddata and cipher_text by checking the tag and, if successful, decrypt the cipher_text in plain_text
+	// The nonce anf tag size must match the sizes corresponding with the choosen AEAD algorithm.
+	// plain_text and cipher_text must have equal size.
+	AuthenticateThenDecrypt(tag, plain_text, associateddata, cipher_text, nonce []byte) bool
 }
 
 type internalAEAD struct {
-	aesgcm    AesGcm
+	ag        AEAD
 	nonceSize int
 	tagSize   int
 }
 
-type AesGcm struct {
+type aesGcm struct {
 	cipher cipher.Block
 	y      [16]byte
 	n      [16]byte
@@ -30,7 +44,7 @@ func (this *internalAEAD) EncryptThenMac(tag, cipher_text, associated_data, plai
 	if len(tag) != this.tagSize {
 		return false
 	}
-	return this.aesgcm.EncryptThenMac(tag, cipher_text, associated_data, plain_text, nonce)
+	return this.ag.EncryptThenMac(tag, cipher_text, associated_data, plain_text, nonce)
 }
 
 func (this *internalAEAD) AuthenticateThenDecrypt(tag, plain_text, associated_data, cipher_text, nonce []byte) bool {
@@ -40,165 +54,105 @@ func (this *internalAEAD) AuthenticateThenDecrypt(tag, plain_text, associated_da
 	if len(tag) != this.tagSize {
 		return false
 	}
-	return this.aesgcm.AuthenticateThenDecrypt(tag, plain_text, associated_data, cipher_text, nonce)
+	return this.ag.AuthenticateThenDecrypt(tag, plain_text, associated_data, cipher_text, nonce)
 }
 
+// NewAES_128_GCM returns an AEAD with the AEAD_AES_128_GCM algorithm's properties (as described in RFC5116).
+//
+// NOTES: if key's length is not 16 bytes an error is return, nil otherwise
 func NewAES_128_GCM(key []byte) (AEAD, error) {
-	var err error
-	var i uint32
-	var h [16]byte
-
 	if len(key) != 16 {
 		return nil, errors.New("aead: AES_128_GCM requires 128-bit key")
 	}
 	a := new(internalAEAD)
+	a.ag = NewAesGcm(key)
 	a.nonceSize = 12
 	a.tagSize = 16
-	a.aesgcm.cipher, err = aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-	a.aesgcm.cipher.Encrypt(h[:], a.aesgcm.y[:])
-	for i = 0; i < 8; i++ {
-		a.aesgcm.h1 += uint64(h[i]) << (56 - (i << 3))
-	}
-	for i = 0; i < 8; i++ {
-		a.aesgcm.h0 += uint64(h[i+8]) << (56 - (i << 3))
-	}
 	return a, nil
 }
 
+// NewAES_256_GCM returns an AEAD with the AEAD_AES_256_GCM algorithm's properties (as described in RFC5116).
+//
+// NOTES: if key's length is not 32 bytes an error is return, nil otherwise
 func NewAES_256_GCM(key []byte) (AEAD, error) {
-	var err error
-	var i uint32
-	var h [32]byte
-
 	if len(key) != 32 {
 		return nil, errors.New("aead: AES_256_GCM requires 256-bit key")
 	}
 	a := new(internalAEAD)
+	a.ag = NewAesGcm(key)
 	a.nonceSize = 12
 	a.tagSize = 16
-	a.aesgcm.cipher, err = aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-	a.aesgcm.cipher.Encrypt(h[:], a.aesgcm.y[:])
-	for i = 0; i < 8; i++ {
-		a.aesgcm.h1 += uint64(h[i]) << (56 - (i << 3))
-	}
-	for i = 0; i < 8; i++ {
-		a.aesgcm.h0 += uint64(h[i+8]) << (56 - (i << 3))
-	}
 	return a, nil
 }
 
+// NewAES_128_GCM_8 returns an AEAD with the AEAD_AES_128_GCM_8 algorithm's properties (as described in RFC5282).
+//
+// NOTES: if key's length is not 16 bytes an error is return, nil otherwise
 func NewAES_128_GCM_8(key []byte) (AEAD, error) {
-	var err error
-	var i uint32
-	var h [16]byte
-
 	if len(key) != 16 {
 		return nil, errors.New("aead: AES_128_GCM_8 requires 128-bit key")
 	}
 	a := new(internalAEAD)
+	a.ag = NewAesGcm(key)
 	a.nonceSize = 12
 	a.tagSize = 8
-	a.aesgcm.cipher, err = aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-	a.aesgcm.cipher.Encrypt(h[:], a.aesgcm.y[:])
-	for i = 0; i < 8; i++ {
-		a.aesgcm.h1 += uint64(h[i]) << (56 - (i << 3))
-	}
-	for i = 0; i < 8; i++ {
-		a.aesgcm.h0 += uint64(h[i+8]) << (56 - (i << 3))
-	}
 	return a, nil
 }
 
+// NewAES_256_GCM_8 returns an AEAD with the AEAD_AES_256_GCM_8 algorithm's properties (as described in RFC5282).
+//
+// NOTES: if key's length is not 32 bytes an error is return, nil otherwise
 func NewAES_256_GCM_8(key []byte) (AEAD, error) {
-	var err error
-	var i uint32
-	var h [32]byte
-
 	if len(key) != 32 {
 		return nil, errors.New("aead: AES_256_GCM_8 requires 256-bit key")
 	}
 	a := new(internalAEAD)
+	a.ag = NewAesGcm(key)
 	a.nonceSize = 12
 	a.tagSize = 8
-	a.aesgcm.cipher, err = aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-	a.aesgcm.cipher.Encrypt(h[:], a.aesgcm.y[:])
-	for i = 0; i < 8; i++ {
-		a.aesgcm.h1 += uint64(h[i]) << (56 - (i << 3))
-	}
-	for i = 0; i < 8; i++ {
-		a.aesgcm.h0 += uint64(h[i+8]) << (56 - (i << 3))
-	}
 	return a, nil
 }
 
+// NewAES_128_GCM_12 returns an AEAD with the AEAD_AES_128_GCM_12 algorithm's properties (as described in RFC5282).
+//
+// Notes: if key's length is not 16 bytes an error is return, nil otherwise
 func NewAES_128_GCM_12(key []byte) (AEAD, error) {
-	var err error
-	var i uint32
-	var h [16]byte
-
 	if len(key) != 16 {
 		return nil, errors.New("aead: AES_128_GCM_12 requires 128-bit key")
 	}
 	a := new(internalAEAD)
+	a.ag = NewAesGcm(key)
 	a.nonceSize = 12
 	a.tagSize = 12
-	a.aesgcm.cipher, err = aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-	a.aesgcm.cipher.Encrypt(h[:], a.aesgcm.y[:])
-	for i = 0; i < 8; i++ {
-		a.aesgcm.h1 += uint64(h[i]) << (56 - (i << 3))
-	}
-	for i = 0; i < 8; i++ {
-		a.aesgcm.h0 += uint64(h[i+8]) << (56 - (i << 3))
-	}
 	return a, nil
 }
 
+// NewAES_256_GCM_12 returns an AEAD with the AEAD_AES_256_GCM_12 algorithm's properties (as described in RFC5282).
+//
+// Notes: if key's length is not 32 bytes an error is return, nil otherwise
 func NewAES_256_GCM_12(key []byte) (AEAD, error) {
-	var err error
-	var i uint32
-	var h [32]byte
-
 	if len(key) != 32 {
 		return nil, errors.New("aead: AES_256_GCM_12 requires 256-bit key")
 	}
 	a := new(internalAEAD)
+	a.ag = NewAesGcm(key)
 	a.nonceSize = 12
 	a.tagSize = 12
-	a.aesgcm.cipher, err = aes.NewCipher(key)
-	if err != nil {
-		return nil, err
-	}
-	a.aesgcm.cipher.Encrypt(h[:], a.aesgcm.y[:])
-	for i = 0; i < 8; i++ {
-		a.aesgcm.h1 += uint64(h[i]) << (56 - (i << 3))
-	}
-	for i = 0; i < 8; i++ {
-		a.aesgcm.h0 += uint64(h[i+8]) << (56 - (i << 3))
-	}
 	return a, nil
 }
 
-func NewAesGcm(key []byte) *AesGcm {
+// NewAesGcm returns an AEAD with associated AES GCM algorithm properties.
+// If key's length is 16 bytes then AES 128-bit is used as a cipher suite
+// If key's length is 24 bytes then AES 192-bit is used as a cipher suite
+// If key's length is 32 bytes then AES 256-bit is used as a cipher suite
+//
+// Notes: if key's length is not 16, 24 or 32 bytes an error is return, nil otherwise
+func NewAesGcm(key []byte) AEAD {
 	var err error
 	var i uint32
 	var h [16]byte
 
-	a := new(AesGcm)
+	a := new(aesGcm)
 
 	a.cipher, err = aes.NewCipher(key)
 	if err != nil {
@@ -215,7 +169,7 @@ func NewAesGcm(key []byte) *AesGcm {
 	return a
 }
 
-func (this *AesGcm) EncryptThenMac(tag, cipher_text, associated_data, plain_text, nonce []byte) bool {
+func (this *aesGcm) EncryptThenMac(tag, cipher_text, associated_data, plain_text, nonce []byte) bool {
 
 	// H = E(K,0^128)
 	// Y0 = Nonce || 0^31 1      <-- if Nonce is 96 bits, otherwise Y0 = GHASH(H,{}, Nonce)
@@ -313,7 +267,7 @@ func (this *AesGcm) EncryptThenMac(tag, cipher_text, associated_data, plain_text
 	return true
 }
 
-func (this *AesGcm) AuthenticateThenDecrypt(tag, plain_text, associated_data, cipher_text, nonce []byte) bool {
+func (this *aesGcm) AuthenticateThenDecrypt(tag, plain_text, associated_data, cipher_text, nonce []byte) bool {
 
 	// H = E(K,0^128)
 	// Y0 = Nonce || i0^31 1      <-- if Nonce is 96 bits, otherwise Y0 = GHASH(H,{}, Nonce)
@@ -406,7 +360,7 @@ func (this *AesGcm) AuthenticateThenDecrypt(tag, plain_text, associated_data, ci
 	return true
 }
 
-func (this *AesGcm) ghash(tag []byte, a, c []byte) {
+func (this *aesGcm) ghash(tag []byte, a, c []byte) {
 
 	// GHASH(H, A, C) = Xm+n+1 where the variables Xi for i = 0,...,m+n+1 are defined as:
 	//
@@ -536,7 +490,7 @@ func (this *AesGcm) ghash(tag []byte, a, c []byte) {
 	}
 }
 
-func (this *AesGcm) multH(x0, x1 uint64) (z0, z1 uint64) {
+func (this *aesGcm) multH(x0, x1 uint64) (z0, z1 uint64) {
 
 	// Multiplication in Galois Field (2^128): Computes the value of Z = X * Y, where X,Y and Z are one of GF(2^128).
 	//

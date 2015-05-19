@@ -2,27 +2,208 @@ package main
 
 import "crypto/aes"
 import "crypto/cipher"
+import "errors"
 
 import "bytes"
 import "strings"
 import "fmt"
+import "time"
+
+type AEAD interface {
+	EncryptThenMac(tag, cipher_text, associated_data, plain_text, nonce []byte) bool
+	AuthenticateThenDecrypt(tag, plain_text, associated_data, cipher_text, nonce []byte) bool
+}
+
+type internalAEAD struct {
+	aesgcm    AesGcm
+	nonceSize int
+	tagSize   int
+}
 
 type AesGcm struct {
 	cipher cipher.Block
-	y      []byte
-	n      []byte
+	y      [16]byte
+	n      [16]byte
 	h0     uint64
 	h1     uint64
+}
+
+func (this *internalAEAD) EncryptThenMac(tag, cipher_text, associated_data, plain_text, nonce []byte) bool {
+	if len(nonce) != this.nonceSize {
+		return false
+	}
+	if len(tag) != this.tagSize {
+		return false
+	}
+	return this.aesgcm.EncryptThenMac(tag, cipher_text, associated_data, plain_text, nonce)
+}
+
+func (this *internalAEAD) AuthenticateThenDecrypt(tag, plain_text, associated_data, cipher_text, nonce []byte) bool {
+	if len(nonce) != this.nonceSize {
+		return false
+	}
+	if len(tag) != this.tagSize {
+		return false
+	}
+	return this.aesgcm.AuthenticateThenDecrypt(tag, plain_text, associated_data, cipher_text, nonce)
+}
+
+func NewAES_128_GCM(key []byte) (AEAD, error) {
+	var err error
+	var i uint32
+	var h [16]byte
+
+	if len(key) != 16 {
+		return nil, errors.New("aead: AES_128_GCM requires 128-bit key")
+	}
+	a := new(internalAEAD)
+	a.nonceSize = 12
+	a.tagSize = 16
+	a.aesgcm.cipher, err = aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	a.aesgcm.cipher.Encrypt(h[:], a.aesgcm.y[:])
+	for i = 0; i < 8; i++ {
+		a.aesgcm.h1 += uint64(h[i]) << (56 - (i << 3))
+	}
+	for i = 0; i < 8; i++ {
+		a.aesgcm.h0 += uint64(h[i+8]) << (56 - (i << 3))
+	}
+	return a, nil
+}
+
+func NewAES_256_GCM(key []byte) (AEAD, error) {
+	var err error
+	var i uint32
+	var h [32]byte
+
+	if len(key) != 32 {
+		return nil, errors.New("aead: AES_256_GCM requires 256-bit key")
+	}
+	a := new(internalAEAD)
+	a.nonceSize = 12
+	a.tagSize = 16
+	a.aesgcm.cipher, err = aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	a.aesgcm.cipher.Encrypt(h[:], a.aesgcm.y[:])
+	for i = 0; i < 8; i++ {
+		a.aesgcm.h1 += uint64(h[i]) << (56 - (i << 3))
+	}
+	for i = 0; i < 8; i++ {
+		a.aesgcm.h0 += uint64(h[i+8]) << (56 - (i << 3))
+	}
+	return a, nil
+}
+
+func NewAES_128_GCM_8(key []byte) (AEAD, error) {
+	var err error
+	var i uint32
+	var h [16]byte
+
+	if len(key) != 16 {
+		return nil, errors.New("aead: AES_128_GCM_8 requires 128-bit key")
+	}
+	a := new(internalAEAD)
+	a.nonceSize = 12
+	a.tagSize = 8
+	a.aesgcm.cipher, err = aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	a.aesgcm.cipher.Encrypt(h[:], a.aesgcm.y[:])
+	for i = 0; i < 8; i++ {
+		a.aesgcm.h1 += uint64(h[i]) << (56 - (i << 3))
+	}
+	for i = 0; i < 8; i++ {
+		a.aesgcm.h0 += uint64(h[i+8]) << (56 - (i << 3))
+	}
+	return a, nil
+}
+
+func NewAES_256_GCM_8(key []byte) (AEAD, error) {
+	var err error
+	var i uint32
+	var h [32]byte
+
+	if len(key) != 32 {
+		return nil, errors.New("aead: AES_256_GCM_8 requires 256-bit key")
+	}
+	a := new(internalAEAD)
+	a.nonceSize = 12
+	a.tagSize = 8
+	a.aesgcm.cipher, err = aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	a.aesgcm.cipher.Encrypt(h[:], a.aesgcm.y[:])
+	for i = 0; i < 8; i++ {
+		a.aesgcm.h1 += uint64(h[i]) << (56 - (i << 3))
+	}
+	for i = 0; i < 8; i++ {
+		a.aesgcm.h0 += uint64(h[i+8]) << (56 - (i << 3))
+	}
+	return a, nil
+}
+
+func NewAES_128_GCM_12(key []byte) (AEAD, error) {
+	var err error
+	var i uint32
+	var h [16]byte
+
+	if len(key) != 16 {
+		return nil, errors.New("aead: AES_128_GCM_12 requires 128-bit key")
+	}
+	a := new(internalAEAD)
+	a.nonceSize = 12
+	a.tagSize = 12
+	a.aesgcm.cipher, err = aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	a.aesgcm.cipher.Encrypt(h[:], a.aesgcm.y[:])
+	for i = 0; i < 8; i++ {
+		a.aesgcm.h1 += uint64(h[i]) << (56 - (i << 3))
+	}
+	for i = 0; i < 8; i++ {
+		a.aesgcm.h0 += uint64(h[i+8]) << (56 - (i << 3))
+	}
+	return a, nil
+}
+
+func NewAES_256_GCM_12(key []byte) (AEAD, error) {
+	var err error
+	var i uint32
+	var h [32]byte
+
+	if len(key) != 32 {
+		return nil, errors.New("aead: AES_256_GCM_12 requires 256-bit key")
+	}
+	a := new(internalAEAD)
+	a.nonceSize = 12
+	a.tagSize = 12
+	a.aesgcm.cipher, err = aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	a.aesgcm.cipher.Encrypt(h[:], a.aesgcm.y[:])
+	for i = 0; i < 8; i++ {
+		a.aesgcm.h1 += uint64(h[i]) << (56 - (i << 3))
+	}
+	for i = 0; i < 8; i++ {
+		a.aesgcm.h0 += uint64(h[i+8]) << (56 - (i << 3))
+	}
+	return a, nil
 }
 
 func NewAesGcm(key []byte) *AesGcm {
 	var err error
 	var i uint32
+	var h [16]byte
 
 	a := new(AesGcm)
-	h := make([]byte, 16)
-	a.y = make([]byte, 16)
-	a.n = make([]byte, 16)
 
 	a.cipher, err = aes.NewCipher(key)
 	if err != nil {
@@ -30,7 +211,7 @@ func NewAesGcm(key []byte) *AesGcm {
 		return nil
 	}
 
-	a.cipher.Encrypt(h, a.y)
+	a.cipher.Encrypt(h[:], a.y[:])
 	for i = 0; i < 8; i++ {
 		a.h1 += uint64(h[i]) << (56 - (i << 3))
 	}
@@ -59,7 +240,6 @@ func (this *AesGcm) EncryptThenMac(tag, cipher_text, associated_data, plain_text
 
 	var c, i, j, n, modn uint32
 	var y0_12, y0_13, y0_14, y0_15 byte
-	var null []byte
 
 	if len(cipher_text) < len(plain_text) {
 		return false
@@ -80,7 +260,7 @@ func (this *AesGcm) EncryptThenMac(tag, cipher_text, associated_data, plain_text
 		}
 		c = 1
 	} else {
-		this.ghash(tag, null, nonce)
+		this.ghash(tag, nil, nonce)
 		for i = 0; i < 16; i++ {
 			this.n[i] = tag[i]
 		}
@@ -103,7 +283,7 @@ func (this *AesGcm) EncryptThenMac(tag, cipher_text, associated_data, plain_text
 		this.n[13] = byte((c >> 16) & 0xff)
 		this.n[12] = byte((c >> 24) & 0xff)
 		// Compute E(K,Yi)
-		this.cipher.Encrypt(this.y, this.n)
+		this.cipher.Encrypt(this.y[:], this.n[:])
 		// Compute Ci = Pi xor E(K,Yi)
 		for j = 0; j < 16; j++ {
 			cipher_text[(i<<4)+j] = plain_text[(i<<4)+j] ^ this.y[j]
@@ -117,7 +297,7 @@ func (this *AesGcm) EncryptThenMac(tag, cipher_text, associated_data, plain_text
 		this.n[13] = byte((c >> 16) & 0xff)
 		this.n[12] = byte((c >> 24) & 0xff)
 		// Compute E(K,Yn)
-		this.cipher.Encrypt(this.y, this.n)
+		this.cipher.Encrypt(this.y[:], this.n[:])
 		// Compute Cn = Pn xor MSBv( E(K,Yn) )
 		for j = 0; j < modn; j++ {
 			cipher_text[(n<<4)+j] = plain_text[(n<<4)+j] ^ this.y[j]
@@ -131,7 +311,7 @@ func (this *AesGcm) EncryptThenMac(tag, cipher_text, associated_data, plain_text
 	this.n[14] = y0_14
 	this.n[15] = y0_15
 	// Compute E(K,Y0)
-	this.cipher.Encrypt(this.y, this.n)
+	this.cipher.Encrypt(this.y[:], this.n[:])
 	// Compute GHASH^E(K,Y0)
 	for i = 0; i < 16; i++ {
 		tag[i] ^= this.y[i]
@@ -158,8 +338,7 @@ func (this *AesGcm) AuthenticateThenDecrypt(tag, plain_text, associated_data, ci
 
 	var c, i, j, n, modn uint32
 	var y0_12, y0_13, y0_14, y0_15 byte
-	var null []byte
-	t := make([]byte, 16)
+	var t [16]byte
 
 	if len(cipher_text) < len(plain_text) {
 		return false
@@ -176,7 +355,7 @@ func (this *AesGcm) AuthenticateThenDecrypt(tag, plain_text, associated_data, ci
 		this.n[15] = 1
 		c = 1
 	} else {
-		this.ghash(t, null, nonce)
+		this.ghash(t[:], nil, nonce)
 		for i = 0; i < 16; i++ {
 			this.n[i] = t[i]
 		}
@@ -187,14 +366,13 @@ func (this *AesGcm) AuthenticateThenDecrypt(tag, plain_text, associated_data, ci
 		c = (uint32(y0_12) << 24) | (uint32(y0_13) << 16) | (uint32(y0_14) << 8) | uint32(y0_15)
 	}
 
-	this.ghash(t, associated_data, cipher_text)
+	this.ghash(t[:], associated_data, cipher_text)
 	// Compute Y0
 	// Compute E(K,Y0)
-	this.cipher.Encrypt(this.y, this.n)
+	this.cipher.Encrypt(this.y[:], this.n[:])
 	// Compute and compare GHASH^E(K,Y0)
 	for i = 0; i < 16; i++ {
-		t[i] ^= this.y[i]
-		if tag[i] != t[i] {
+		if tag[i] != (t[i] ^ this.y[i]) {
 			return false
 		}
 	}
@@ -211,7 +389,7 @@ func (this *AesGcm) AuthenticateThenDecrypt(tag, plain_text, associated_data, ci
 		this.n[13] = byte((c >> 16) & 0xff)
 		this.n[12] = byte((c >> 24) & 0xff)
 		// Compute E(K,Yi)
-		this.cipher.Encrypt(this.y, this.n)
+		this.cipher.Encrypt(this.y[:], this.n[:])
 		// Compute Ci = Pi xor E(K,Yi)
 		for j = 0; j < 16; j++ {
 			plain_text[(i<<4)+j] = cipher_text[(i<<4)+j] ^ this.y[j]
@@ -225,7 +403,7 @@ func (this *AesGcm) AuthenticateThenDecrypt(tag, plain_text, associated_data, ci
 		this.n[13] = byte((c >> 16) & 0xff)
 		this.n[12] = byte((c >> 24) & 0xff)
 		// Compute E(K,Yn)
-		this.cipher.Encrypt(this.y, this.n)
+		this.cipher.Encrypt(this.y[:], this.n[:])
 		// Compute Cn = Pn xor MSBv( E(K,Yn) )
 		for j = 0; j < modn; j++ {
 			plain_text[(n<<4)+j] = cipher_text[(n<<4)+j] ^ this.y[j]
@@ -606,6 +784,16 @@ func main() {
 		toByte("d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39"), // plain text
 		toByte("5a8def2f0c9e53f1f75d7853659e2a20eeb2b22aafde6419a058ab4f6f746bf40fc0c3b780f244452da3ebf1c5d82cdea2418997200ef82e44ae7e3f"), // waiting cipher
 		toByte("a44a8266ee1c8eb0c8b5d4cf5ae9f19a"))                                                                                         // waiting tag
+
+	/*
+		testPerf(
+			toByte("feffe9928665731c6d6a8f9467308308feffe9928665731c6d6a8f9467308308"),                                                         // key
+			toByte("cafebabefacedbaddecaf888"),                                                                                                 // nonce
+			toByte("feedfacedeadbeeffeedfacedeadbeefabaddad2"),                                                                                 // aad
+			toByte("d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39"), // plain text
+			toByte("522dc1f099567d07f47f37a32a84427d643a8cdcbfe5c0c97598a2bd2555d1aa8cb08e48590dbb3da7b08b1056828838c5f61e6393ba7a0abcc9f662"), // waiting cipher
+			toByte("76fc6ece0f4e1768cddf8853bb2d551b"))
+	*/
 }
 
 func toByte(s string) []byte {
@@ -627,6 +815,22 @@ func toByte(s string) []byte {
 		}
 	}
 	return b
+}
+
+func testPerf(key, nonce, aad, plaintext, ciphertext, tag []byte) {
+	t := make([]byte, len(tag))
+	ct := make([]byte, len(plaintext))
+	pt := make([]byte, len(ciphertext))
+
+	aead, _ := NewAES_256_GCM(key)
+	start := time.Now()
+	for i := 0; i < 1000000; i++ {
+		aead.EncryptThenMac(t, ct, aad, plaintext, nonce)
+		aead.AuthenticateThenDecrypt(tag, pt, aad, ciphertext, nonce)
+	}
+	end := time.Now()
+	delta := end.Sub(start)
+	fmt.Printf("Time = %s\n", delta)
 }
 
 func test_AES_GCM(key, nonce, aad, plaintext, ciphertext, tag []byte) {

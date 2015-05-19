@@ -1,3 +1,5 @@
+[![GoDoc](https://godoc.org/github.com/romain-jacotin/aesgcm?status.svg)](https://godoc.org/github.com/romain-jacotin/aesgcm)
+
 # AEAD AES GCM in Go language
 
 A Go program that implement the following AEAD Algorithms:

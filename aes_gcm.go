@@ -1,4 +1,4 @@
-package goahead
+package aesgcm
 
 import "crypto/aes"
 import "crypto/cipher"

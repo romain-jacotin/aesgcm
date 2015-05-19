@@ -59,7 +59,7 @@ func (this *internalAEAD) AuthenticateThenDecrypt(tag, plain_text, associated_da
 
 // NewAES_128_GCM returns an AEAD with the AEAD_AES_128_GCM algorithm's properties (as described in RFC5116).
 //
-// NOTES: if key's length is not 16 bytes an error is return, nil otherwise
+// Notes: if key's length is not 16 bytes an error is return, nil otherwise
 func NewAES_128_GCM(key []byte) (AEAD, error) {
 	if len(key) != 16 {
 		return nil, errors.New("aead: AES_128_GCM requires 128-bit key")
@@ -73,7 +73,7 @@ func NewAES_128_GCM(key []byte) (AEAD, error) {
 
 // NewAES_256_GCM returns an AEAD with the AEAD_AES_256_GCM algorithm's properties (as described in RFC5116).
 //
-// NOTES: if key's length is not 32 bytes an error is return, nil otherwise
+// Notes: if key's length is not 32 bytes an error is return, nil otherwise
 func NewAES_256_GCM(key []byte) (AEAD, error) {
 	if len(key) != 32 {
 		return nil, errors.New("aead: AES_256_GCM requires 256-bit key")
@@ -87,7 +87,7 @@ func NewAES_256_GCM(key []byte) (AEAD, error) {
 
 // NewAES_128_GCM_8 returns an AEAD with the AEAD_AES_128_GCM_8 algorithm's properties (as described in RFC5282).
 //
-// NOTES: if key's length is not 16 bytes an error is return, nil otherwise
+// Notes: if key's length is not 16 bytes an error is return, nil otherwise
 func NewAES_128_GCM_8(key []byte) (AEAD, error) {
 	if len(key) != 16 {
 		return nil, errors.New("aead: AES_128_GCM_8 requires 128-bit key")
@@ -101,7 +101,7 @@ func NewAES_128_GCM_8(key []byte) (AEAD, error) {
 
 // NewAES_256_GCM_8 returns an AEAD with the AEAD_AES_256_GCM_8 algorithm's properties (as described in RFC5282).
 //
-// NOTES: if key's length is not 32 bytes an error is return, nil otherwise
+// Notes: if key's length is not 32 bytes an error is return, nil otherwise
 func NewAES_256_GCM_8(key []byte) (AEAD, error) {
 	if len(key) != 32 {
 		return nil, errors.New("aead: AES_256_GCM_8 requires 256-bit key")

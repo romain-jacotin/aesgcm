@@ -164,6 +164,39 @@ var tests = []testVector{
 
 }
 
+func BenchmarkEncryptThenMac(b *testing.B) {
+	i := 2
+
+	key := toByte(tests[i].key)
+	nonce := toByte(tests[i].nonce)
+	aad := toByte(tests[i].aad)
+	plaintext := toByte(tests[i].plaintext)
+	tag := toByte(tests[i].tag)
+	t := make([]byte, len(tag))
+	ct := make([]byte, len(plaintext))
+	aead := NewAesGcm(key)
+
+	for i = 0; i < b.N; i++ {
+		aead.EncryptThenMac(t, ct, aad, plaintext, nonce)
+	}
+}
+
+func BenchmarkAuthenticateThenDecrypt(b *testing.B) {
+	i := 2
+
+	key := toByte(tests[i].key)
+	nonce := toByte(tests[i].nonce)
+	aad := toByte(tests[i].aad)
+	ciphertext := toByte(tests[i].ciphertext)
+	tag := toByte(tests[i].tag)
+	pt := make([]byte, len(ciphertext))
+	aead := NewAesGcm(key)
+
+	for i = 0; i < b.N; i++ {
+		aead.AuthenticateThenDecrypt(tag, pt, aad, ciphertext, nonce)
+	}
+}
+
 func toByte(s string) []byte {
 	bs := []byte(strings.ToLower(s))
 	b := make([]byte, len(bs)/2)

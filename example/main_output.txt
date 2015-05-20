@@ -1,0 +1,16 @@
+
+AEAD_AES_128_GCM_12 Encryption test
+-----------------------------------
+nonce           : [12] 1789cafebabe1948bebefada
+associated data : [41] The Universal Declaration of Human Rights
+Plain text      : [170] All human beings are born free and equal in dignity and rights. They are endowed with reason and conscience and should act towards one another in a spirit of brotherhood.
+Tag             : [12] ac3722f57efe333d1a358f1d
+Cipher text     : [170] f0397a87ac175a61e237c68df40e999de14189ac44ba3a82731669002dbd2a4d8fc3e6fa2facf4efc0a26b81a5724ed079858935d463d42b55060a6f688025b7de0b31777614ce174b835f35fe2d7cdb8b71e0a6ea9e5141598d5661558095f2d9a1f1a8ac4cdd802ab83419102966d2e31db373c0ef3e008d18d2f4c01f527f18af107d6967164646aa2f44b8dcc651843e301b64a52212d3226adc23a4545f1b204358bda427530920
+
+AEAD_AES_128_GCM_12 Decryption test
+-----------------------------------
+nonce           : [12] 1789cafebabe1948bebefada
+associated data : [41] The Universal Declaration of Human Rights
+Cipher text     : [170] f0397a87ac175a61e237c68df40e999de14189ac44ba3a82731669002dbd2a4d8fc3e6fa2facf4efc0a26b81a5724ed079858935d463d42b55060a6f688025b7de0b31777614ce174b835f35fe2d7cdb8b71e0a6ea9e5141598d5661558095f2d9a1f1a8ac4cdd802ab83419102966d2e31db373c0ef3e008d18d2f4c01f527f18af107d6967164646aa2f44b8dcc651843e301b64a52212d3226adc23a4545f1b204358bda427530920
+Plain text      : [170] All human beings are born free and equal in dignity and rights. They are endowed with reason and conscience and should act towards one another in a spirit of brotherhood.
+

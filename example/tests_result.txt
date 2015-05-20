@@ -1,3 +1,4 @@
+=== RUN TestAesGcm
 
 ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~
 
@@ -538,3 +539,6 @@ Plain text      : [60] d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8
 
     TEST STATUS = [ PASS ]
 
+--- PASS: TestAesGcm (0.00s)
+PASS
+ok  	github.com/romain-jacotin/aesgcm	0.013s

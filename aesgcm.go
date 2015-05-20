@@ -142,9 +142,12 @@ func NewAES_256_GCM_12(key []byte) (AEAD, error) {
 }
 
 // NewAesGcm returns an AEAD with associated AES GCM algorithm properties.
-// If key's length is 16 bytes then AES 128-bit is used as a cipher suite
-// If key's length is 24 bytes then AES 192-bit is used as a cipher suite
-// If key's length is 32 bytes then AES 256-bit is used as a cipher suite
+//
+// If key's length is 16 bytes then AES 128-bit is used as a cipher suite.
+//
+// If key's length is 24 bytes then AES 192-bit is used as a cipher suite.
+//
+// If key's length is 32 bytes then AES 256-bit is used as a cipher suite.
 //
 // Notes: if key's length is not 16, 24 or 32 bytes an error is return, nil otherwise
 func NewAesGcm(key []byte) AEAD {

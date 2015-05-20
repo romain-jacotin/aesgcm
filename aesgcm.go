@@ -191,6 +191,7 @@ func (this *aesGcm) EncryptThenMac(tag, cipher_text, associated_data, plain_text
 
 	var c, i, j, n, modn uint32
 	var y0_12, y0_13, y0_14, y0_15 byte
+	var t [16]byte
 
 	if len(cipher_text) < len(plain_text) {
 		return false
@@ -255,7 +256,7 @@ func (this *aesGcm) EncryptThenMac(tag, cipher_text, associated_data, plain_text
 		}
 	}
 
-	this.ghash(tag, associated_data, cipher_text)
+	this.ghash(t[:], associated_data, cipher_text)
 	// Compute Y0
 	this.n[12] = y0_12
 	this.n[13] = y0_13
@@ -264,8 +265,9 @@ func (this *aesGcm) EncryptThenMac(tag, cipher_text, associated_data, plain_text
 	// Compute E(K,Y0)
 	this.cipher.Encrypt(this.y[:], this.n[:])
 	// Compute GHASH^E(K,Y0)
-	for i = 0; i < 16; i++ {
-		tag[i] ^= this.y[i]
+	j = uint32(len(tag))
+	for i = 0; i < j; i++ {
+		tag[i] = t[i] ^ this.y[i]
 	}
 	return true
 }
@@ -322,7 +324,8 @@ func (this *aesGcm) AuthenticateThenDecrypt(tag, plain_text, associated_data, ci
 	// Compute E(K,Y0)
 	this.cipher.Encrypt(this.y[:], this.n[:])
 	// Compute and compare GHASH^E(K,Y0)
-	for i = 0; i < 16; i++ {
+	j = uint32(len(tag))
+	for i = 0; i < j; i++ {
 		if tag[i] != (t[i] ^ this.y[i]) {
 			return false
 		}

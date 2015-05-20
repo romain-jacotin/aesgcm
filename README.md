@@ -2,7 +2,7 @@
 
 # AEAD AES GCM in Go language
 
-A Go program that implement the following AEAD Algorithms:
+A Go package (aesgcm) that implement the following AEAD Algorithms two times faster than standard 'crypto/cipher' golang library:
 
 | IANA <br> AEAD Registry <br> (Numeric ID) |           Name         | Reference | Key size  | Nonce size | MAC size |
 |-------------------------------------------|------------------------|-----------|-----------|------------|----------|

@@ -176,6 +176,7 @@ func BenchmarkEncryptThenMac(b *testing.B) {
 	ct := make([]byte, len(plaintext))
 	aead := NewAesGcm(key)
 
+	b.SetBytes(int64(len(plaintext)))
 	for i = 0; i < b.N; i++ {
 		aead.EncryptThenMac(t, ct, aad, plaintext, nonce)
 	}
@@ -192,6 +193,7 @@ func BenchmarkAuthenticateThenDecrypt(b *testing.B) {
 	pt := make([]byte, len(ciphertext))
 	aead := NewAesGcm(key)
 
+	b.SetBytes(int64(len(ciphertext)))
 	for i = 0; i < b.N; i++ {
 		aead.AuthenticateThenDecrypt(tag, pt, aad, ciphertext, nonce)
 	}
@@ -224,7 +226,7 @@ func toByte(s string) []byte {
 func TestAesGcm(t *testing.T) {
 	var key, nonce, aad, plaintext, ciphertext, tag []byte
 	for _, i := range tests {
-		fmt.Printf("\n~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~\n\n")
+		fmt.Printf("\n~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~\n\n")
 		key = toByte(i.key)
 		nonce = toByte(i.nonce)
 		aad = toByte(i.aad)
